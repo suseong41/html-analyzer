@@ -10,11 +10,39 @@ CHtmlAnalyzer::CHtmlAnalyzer()
 	m_phishingPattern = false;
 	m_backdoor = false;
 	m_detection = "";
+	m_currentDomain = "";
+	m_inForm = false;
 }
 CHtmlAnalyzer::~CHtmlAnalyzer() {}
 
+void CHtmlAnalyzer::SetCurrentUrl(const std::string& url)
+{
+	m_currentDomain = GetDomainFromUrl(url);
+}
+
+std::string CHtmlAnalyzer::GetDomainFromUrl(const std::string& url)
+{
+	std::string domain = url;
+	UINT64 protocol = domain.find("://");
+	if (protocol != std::string::npos)
+	{
+		domain = domain.substr(protocol + 3);
+	}
+
+	UINT64 slash = domain.find('/');
+	if (slash != std::string::npos)
+	{
+		domain = domain.substr(0, slash);
+	}
+
+	domain = core::MakeLower(domain);
+
+	return domain;
+}
+
 void CHtmlAnalyzer::OnTokenParsed(const ST_HTML_TOKEN& token)
 {
+	ScanObfuse(token);
 	ScanPhishing(token); // H1xx
 	ScanRansomeware(token); // H2xx
 	ScanExploitkit(token); // H3xx
@@ -122,7 +150,78 @@ void CHtmlAnalyzer::ScanPhishing(const ST_HTML_TOKEN& token)
 		}
 	}
 
+	// [H103] Cross-Origin Form POST Detected
+	if (token.tagName == "form")
+	{
+		if (token.isClosing)
+		{
+			m_inForm = true;
+			m_formAction = "";
+
+			for (const auto& attr : token.attr)
+			{
+				if (attr.first == "action")
+				{
+					m_formAction = attr.second;
+				}
+			}
+		}
+		else
+		{
+			m_inForm = false;
+			m_formAction = "";
+		}
+	}
+	
+	if (m_inForm && token.tagName == "input")
+	{
+		bool isPassword = false;
+		for (const auto& attr : token.attr)
+		{
+			if (attr.first == "type" && attr.second == "password")
+			{
+				isPassword = true;
+				break;
+			}
+		}
+		if (isPassword && !m_currentDomain.empty() && !m_formAction.empty())
+		{
+			std::string actionDomain = GetDomainFromUrl(m_formAction);
+			if (m_formAction.find("http") == 0 && actionDomain != m_currentDomain && !actionDomain.empty())
+			{
+				m_phishingPattern = true;
+				m_detection += "[H103] Cross-Origin Form POST Detected";
+			}
+		}
+	}
 }
+
+void CHtmlAnalyzer::ScanObfuse(const ST_HTML_TOKEN& token)
+{
+	for (const auto& attr : token.attr)
+	{
+		const std::string& value = attr.second;
+		int zeroWidthCount = 0;
+
+		for (UINT64 i = 0; i + 2 < value.length(); i++)
+		{
+			if ((UCHAR)value[i] == 0xE2 &&
+				(UCHAR)value[i + 1] == 0x80 &&
+				(UCHAR)value[i + 2] == 0x8B)
+			{
+				zeroWidthCount++;
+				i += 2;
+			}
+		}
+		if (1 <= zeroWidthCount)
+		{
+			m_phishingPattern = true;
+			m_detection += "[H001] Zero-Width Character Obfuscation Detected";
+			break;
+		}
+	}
+}
+
 void CHtmlAnalyzer::ScanRansomeware(const ST_HTML_TOKEN& token) {}
 void CHtmlAnalyzer::ScanExploitkit(const ST_HTML_TOKEN& token) {}
 void CHtmlAnalyzer::ScanDownloader(const ST_HTML_TOKEN& token) {}

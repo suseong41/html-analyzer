@@ -38,7 +38,7 @@
     <VCProjectVersion>18.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
     <ProjectGuid>{506b23a3-f227-4a76-a71b-6a786b8015e2}</ProjectGuid>
-    <RootNamespace>SuseongHtmlAnalyzer</RootNamespace>
+    <RootNamespace>suseonghtmlanalyzer</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />

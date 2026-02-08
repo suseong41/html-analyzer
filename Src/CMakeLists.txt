@@ -1,1 +1,1 @@
-add_subdirectory(Suseong-Html-Analyzer)
+add_subdirectory(suseong-html-analyzer)

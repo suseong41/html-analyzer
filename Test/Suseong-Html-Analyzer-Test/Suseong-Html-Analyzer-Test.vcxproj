@@ -38,7 +38,7 @@
     <VCProjectVersion>18.0</VCProjectVersion>
     <Keyword>Win32Proj</Keyword>
     <ProjectGuid>{ef172aae-2cb3-462b-bf41-5130ddb2ae9e}</ProjectGuid>
-    <RootNamespace>SuseongHtmlAnalyzerTest</RootNamespace>
+    <RootNamespace>suseonghtmlanalyzertest</RootNamespace>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
@@ -311,7 +311,7 @@
     <ClInclude Include="pch.h" />
   </ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\..\Src\Suseong-Html-Analyzer\Suseong-Html-Analyzer.vcxproj">
+    <ProjectReference Include="..\..\Src\suseong-html-analyzer\suseong-html-analyzer.vcxproj">
       <Project>{506b23a3-f227-4a76-a71b-6a786b8015e2}</Project>
     </ProjectReference>
   </ItemGroup>
