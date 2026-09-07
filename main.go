@@ -2,16 +2,14 @@ package main
 
 import (
 	"fmt"
-	"github.com/suseong41/suseong-html-analyzer/tokenizer"
 	"log"
 	"os"
 	"sort"
-	"strings"
+
+	"github.com/suseong41/suseong-html-analyzer/scanner"
 )
 
-const (
-	test1 = "<p>hello <b>world</b></p>"
-)
+// map: [키]값{}
 
 func main() {
 
@@ -22,45 +20,26 @@ func main() {
 	}
 
 	fmt.Println("-------- 처리 시작 --------")
-	z := tokenizer.New(string(data))
-	// map: [키]값{}
-	counts := map[tokenizer.TokenType]int{}
-	tagCounts := map[string]int{}
+	res := scanner.Scan(string(data))
 
-	for {
-		tok := z.Next()
-		if tok.Type == tokenizer.ErrToken {
-			break
-		}
-		counts[tok.Type]++
-		if tok.Type == tokenizer.StartTagToken {
-			for _, a := range tok.Attrs {
-				if strings.HasPrefix(a.Name, "on") && 2 < len(a.Name) {
-					l, c := z.Position(a.Offset)
-					fmt.Printf("  %4d:%-3d [인라인 핸들러] <%s %s=…>\n", l, c, tok.Name, a.Name)
-				}
-				if (a.Name == "href" || a.Name == "src") &&
-					strings.HasPrefix(strings.ToLower(strings.TrimSpace(a.Value)), "javascript:") {
-					fmt.Printf("  [javascript: URL] <%s %s=%q>\n", tok.Name, a.Name, a.Value)
-				}
-			}
-		}
+	for _, f := range res.Findings {
+		fmt.Printf("  %4d:%-4d %-4s [%s] %s\n", f.Line, f.Col, f.Severity, f.Code, f.Evidence)
 	}
-	fmt.Println("토큰 종류:", counts)
-
-	names := make([]string, 0, len(tagCounts))
-	for name := range tagCounts {
+	fmt.Printf("\n탐지 %d건\n", len(res.Findings))
+	fmt.Println("토큰 종류:", res.Tokens)
+	names := make([]string, 0, len(res.Tags))
+	for name := range res.Tags {
 		names = append(names, name)
 	}
 	sort.Slice(names, func(i, j int) bool {
-		return tagCounts[names[j]] < tagCounts[names[i]] // 개수 내림차순
+		return res.Tags[names[j]] < res.Tags[names[i]]
 	})
 
 	for i, name := range names {
 		if 15 <= i {
 			break
 		}
-		fmt.Printf("  %-12s %d\n", name, tagCounts[name])
+		fmt.Printf("  %-12s %d\n", name, res.Tags[name])
 	}
 
 	fmt.Println("-------- 처리 완료 --------")
