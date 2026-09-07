@@ -1,9 +1,33 @@
 package scanner
 
-import "github.com/suseong41/suseong-html-analyzer/tokenizer"
+import (
+	"strings"
+
+	"github.com/suseong41/suseong-html-analyzer/tokenizer"
+)
 
 type Severity int
-type rule func(tok tokenizer.Token) []Finding
+
+// Context: 모든 규칙이 공유하는 읽기 전용 정보
+type Context struct {
+	URL    string
+	Domain string
+}
+
+// Rule: 토큰을 하나씩 보고 발견을 돌려줌.
+type Rule interface {
+	Check(ctx *Context, tok tokenizer.Token) []Finding
+}
+
+// finisher: 입력이 끝났을 때 마무리가 필요한 규칙만 구현.
+type finisher interface{ Finish(ctx *Context) []Finding }
+
+// ruleFunc: 상태 없는 함수를 Rule로 만들어 줌. || 어뎁터
+type ruleFunc func(ctx *Context, tok tokenizer.Token) []Finding
+
+func (f ruleFunc) Check(ctx *Context, tok tokenizer.Token) []Finding {
+	return f(ctx, tok)
+}
 
 const (
 	Info Severity = iota
@@ -11,6 +35,16 @@ const (
 	Medium
 	High
 )
+
+// newRules(): 스캔마다 새 규칙 집합 생성.
+func newRules() []Rule {
+	return []Rule{
+		ruleFunc(ruleInlineHandler),
+		ruleFunc(ruleJavaScriptURL),
+		ruleFunc(ruleZeroWidth),
+		&formOriginRule{},
+	}
+}
 
 func (s Severity) String() string {
 	switch s {
@@ -43,31 +77,35 @@ type Result struct {
 	Tags     map[string]int
 }
 
-var rules = []rule{
-	ruleInlineHandler,
-	ruleJavaScriptURL,
-}
+func Scan(src string) Result { return ScanURL(src, "") }
 
-func Scan(src string) Result {
+func ScanURL(src, pageURL string) Result {
 	z := tokenizer.New(src)
+	ctx := &Context{URL: pageURL, Domain: domainOf(pageURL)}
+	rules := newRules()
+
 	res := Result{
 		Tokens: map[tokenizer.TokenType]int{},
 		Tags:   map[string]int{},
 	}
+
 	for {
 		tok := z.Next()
 		if tok.Type == tokenizer.ErrToken {
 			break
 		}
 		res.Tokens[tok.Type]++
-
-		if tok.Type != tokenizer.StartTagToken {
-			continue
+		if tok.Type == tokenizer.StartTagToken {
+			res.Tags[tok.Name]++
 		}
-		res.Tags[tok.Name]++
-
 		for _, r := range rules {
-			res.Findings = append(res.Findings, r(tok)...) // []Finding 슬라이스를 하나씩 풀어서 전달.
+			res.Findings = append(res.Findings, r.Check(ctx, tok)...)
+		}
+	}
+
+	for _, r := range rules {
+		if f, ok := r.(finisher); ok {
+			res.Findings = append(res.Findings, f.Finish(ctx)...)
 		}
 	}
 
@@ -75,4 +113,24 @@ func Scan(src string) Result {
 		res.Findings[i].Line, res.Findings[i].Col = z.Position(res.Findings[i].Offset)
 	}
 	return res
+}
+
+// domainOf(): URL에서 실제 접속 대상 호스트 추출.
+func domainOf(rawURL string) string {
+	s := strings.TrimSpace(rawURL)
+	if i := strings.Index(s, "://"); 0 <= i {
+		s = s[i+3:]
+	} else if strings.HasPrefix(s, "//") {
+		s = s[2:]
+	}
+	if i := strings.IndexAny(s, "/?#"); 0 <= i {
+		s = s[:i]
+	}
+	if i := strings.LastIndex(s, "@"); 0 <= i { // suseong.com@naver.com -> naver.com
+		s = s[i+1:]
+	}
+	if i := strings.LastIndex(s, ":"); 0 <= i {
+		s = s[:i]
+	}
+	return strings.ToLower(s)
 }

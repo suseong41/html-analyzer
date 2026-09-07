@@ -83,7 +83,7 @@ func TestTokenizer(t *testing.T) {
 		{
 			name:  "닥타입",
 			input: "<!DOCTYPE html>",
-			want:  []string{"COMMENT:<!DOCTYPE html>"},
+			want:  []string{"DOCTYPE:<!DOCTYPE html>"},
 		},
 		{
 			name:  "스크립트내부",

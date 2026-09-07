@@ -28,7 +28,11 @@ func isDangerousJSURL(v string) bool {
 	return body != "" && body != "void(0)"
 }
 
-func ruleInlineHandler(tok tokenizer.Token) []Finding {
+func ruleInlineHandler(ctx *Context, tok tokenizer.Token) []Finding {
+	if tok.Type != tokenizer.StartTagToken {
+		return nil
+	}
+
 	var out []Finding
 	for _, a := range tok.Attrs {
 		if strings.HasPrefix(a.Name, "on") && 2 < len(a.Name) {
@@ -44,7 +48,11 @@ func ruleInlineHandler(tok tokenizer.Token) []Finding {
 	return out
 }
 
-func ruleJavaScriptURL(tok tokenizer.Token) []Finding {
+func ruleJavaScriptURL(ctx *Context, tok tokenizer.Token) []Finding {
+	if tok.Type != tokenizer.StartTagToken {
+		return nil
+	}
+
 	var out []Finding
 	for _, a := range tok.Attrs {
 		if a.Name != "href" && a.Name != "src" {
@@ -61,4 +69,108 @@ func ruleJavaScriptURL(tok tokenizer.Token) []Finding {
 		}
 	}
 	return out
+}
+
+// -- 제로폭 문자 난독화 (H001) ----
+
+var zeroWidth = map[rune]string{
+	'\u200B': "U+200B ZERO WIDTH SPACE",
+	'\u200C': "U+200C ZWNJ",
+	'\u200D': "U+200D ZWJ",
+	'\u2060': "U+2060 WORD JOINER",
+	'\uFEFF': "U+FEFF BOM",
+}
+
+func findZeroWidth(s string) (string, bool) {
+	for _, r := range s {
+		if name, ok := zeroWidth[r]; ok {
+			return name, true
+		}
+	}
+	return "", false
+}
+
+func zeroWidthFinding(name string, off int, where string) Finding {
+	return Finding{
+		Code:     "zero-width",
+		Title:    "제로폭 문자 난독화",
+		Severity: Low,
+		Offset:   off,
+		Evidence: where + "에 " + name,
+	}
+}
+
+func ruleZeroWidth(ctx *Context, tok tokenizer.Token) []Finding {
+	switch tok.Type {
+	case tokenizer.TextToken:
+		if name, ok := findZeroWidth(tok.Data); ok {
+			return []Finding{zeroWidthFinding(name, tok.Offset, "텍스트")}
+		}
+	case tokenizer.StartTagToken:
+		for _, a := range tok.Attrs {
+			if name, ok := findZeroWidth(a.Value); ok {
+				return []Finding{zeroWidthFinding(name, a.Offset, a.Name+" 속성값")}
+			}
+		}
+	}
+	return nil
+}
+
+// -- 외부 도메인으로 가는 비밀번호 폼 (H103) ----
+
+type formOriginRule struct {
+	inForm      bool
+	action      string
+	hasPassword bool
+	passwordOff int
+}
+
+func (r *formOriginRule) Check(ctx *Context, tok tokenizer.Token) []Finding {
+	switch {
+	case tok.Type == tokenizer.StartTagToken && tok.Name == "form":
+		out := r.report(ctx)
+		r.inForm = true
+		r.action, _ = tok.Attr("action")
+		r.hasPassword = false
+		return out
+	case tok.Type == tokenizer.EndTagToken && tok.Name == "form":
+		out := r.report(ctx)
+		r.inForm = false
+		return out
+	case r.inForm && tok.Type == tokenizer.StartTagToken && tok.Name == "input":
+		if v, ok := tok.Attr("type"); ok && strings.EqualFold(strings.TrimSpace(v), "password") {
+			r.hasPassword = true
+			r.passwordOff = tok.Offset
+		}
+	}
+	return nil
+}
+
+func (r *formOriginRule) Finish(ctx *Context) []Finding {
+	out := r.report(ctx)
+	r.inForm = false
+	return out
+}
+
+func (r *formOriginRule) report(ctx *Context) []Finding {
+	if !r.inForm || !r.hasPassword || ctx.Domain == "" {
+		return nil
+	}
+	action := normalizeURL(r.action)
+	if !strings.HasPrefix(action, "http://") &&
+		!strings.HasPrefix(action, "https://") &&
+		!strings.HasPrefix(action, "//") {
+		return nil
+	}
+	d := domainOf(action)
+	if d == "" || d == ctx.Domain {
+		return nil
+	}
+	return []Finding{{
+		Code:     "cross-origin-password-form",
+		Title:    "비밀번호 폼이 외부 도메인으로 전송됨",
+		Severity: High,
+		Offset:   r.passwordOff,
+		Evidence: ctx.Domain + " → " + d + "  (action=" + r.action + ")",
+	}}
 }

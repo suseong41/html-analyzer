@@ -21,7 +21,7 @@ func TestRuleJavaScriptURL(t *testing.T) {
 	}
 	for _, c := range cases {
 		tok := tokenizer.New(c.in).Next()
-		if got := len(ruleJavaScriptURL(tok)); got != c.want {
+		if got := len(ruleJavaScriptURL(&Context{}, tok)); got != c.want {
 			t.Errorf("%s → %d건, want %d건", c.in, got, c.want)
 		}
 	}

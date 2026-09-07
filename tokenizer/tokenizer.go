@@ -17,6 +17,7 @@ const (
 	StartTagToken                  // 2 <p>
 	EndTagToken                    // 3 </p>
 	CommentToken                   // 4 <!-- -->, <!DOCTYPE
+	DoctypeToken                   // 5 <!DOCTYPE html>
 )
 
 type Token struct {
@@ -25,7 +26,7 @@ type Token struct {
 	Attrs       []Attribute
 	Data        string
 	Offset      int
-	Raw         bool // <script>/<style>
+	Raw         bool // <script>/<style> 내부 텍스트
 	SelfClosing bool
 }
 
@@ -79,10 +80,12 @@ func (t *Tokenizer) Next() Token {
 	}
 
 	switch t.buf[t.pos+1] {
-	case '!', '?':
-		return t.readComment()
+	case '!':
+		return t.readMarkupDeclaration()
+	case '?':
+		return t.readBogusComment(t.pos + 1) // '?' 도 주석 내용에 포함.
 	case '/':
-		return t.readTag(EndTagToken)
+		return t.readEndTag()
 	default:
 		return t.readTag(StartTagToken)
 	}
@@ -226,6 +229,8 @@ func (tt TokenType) String() string {
 		return "END"
 	case CommentToken:
 		return "COMMENT"
+	case DoctypeToken:
+		return "DOCTYPE"
 	}
 	return "UNKNOWN"
 }
@@ -243,10 +248,119 @@ func (t *Tokenizer) Position(offset int) (line, col int) {
 	return i + 1, utf8.RuneCount(t.buf[t.lineStarts[i]:offset]) + 1
 }
 
+// readMarkupDeclaration(): "<!"다음을 보고 주석/DOCTYPE/가짜선언 구분
+func (t *Tokenizer) readMarkupDeclaration() Token {
+	rest := t.buf[t.pos+2:]
+	switch {
+	case 2 <= len(rest) && rest[0] == '-' && rest[1] == '-':
+		return t.readComment()
+	case hasPrefixFold(rest, "doctype"):
+		return t.readDoctype()
+	default:
+		return t.readBogusComment(t.pos + 2)
+	}
+}
+
+// readEndTag(): </ 뒤 판별
+func (t *Tokenizer) readEndTag() Token {
+	if len(t.buf) <= t.pos+2 { // "</"로 끝남 -> 텍스트
+		start := t.pos
+		t.pos = len(t.buf)
+		return Token{Type: TextToken, Data: string(t.buf[start:]), Offset: start}
+	}
+	c := t.buf[t.pos+2]
+	switch {
+	case isASCIIAlpha(c):
+		return t.readTag(EndTagToken)
+	case c == '>':
+		t.pos += 3 // </> 버림
+		return t.Next()
+	default:
+		return t.readBogusComment(t.pos + 2)
+	}
+}
+
+// readComment(): "<!--" 주석
 func (t *Tokenizer) readComment() Token {
 	start := t.pos
+	i := t.pos + 4 // "<!--" 다음
+
+	// <!--> <!--->는 즉시 닫히는 빈 주석
+	if i < len(t.buf) && t.buf[i] == '>' {
+		t.pos = i + 1
+		return Token{Type: CommentToken, Offset: start}
+	}
+	if i+1 < len(t.buf) && t.buf[i] == '-' && t.buf[i+1] == '>' {
+		t.pos = i + 2
+		return Token{Type: CommentToken, Offset: start}
+	}
+
+	j := i
+	for j = i; j < len(t.buf); j++ {
+		if t.buf[j] != '-' {
+			continue
+		}
+		if j+2 < len(t.buf) && t.buf[j+1] == '-' && t.buf[j+2] == '>' { // -->
+			t.pos = j + 3
+			return Token{Type: CommentToken, Data: string(t.buf[i:j]), Offset: start}
+		}
+		if j+3 < len(t.buf) && t.buf[j+1] == '-' && t.buf[j+2] == '!' && t.buf[j+3] == '>' { // --!>
+			t.pos = j + 4
+			return Token{Type: CommentToken, Data: string(t.buf[i:j]), Offset: start}
+		}
+	}
+
+	// 닫히지 않고 끝까지 주석인 경우
+	t.pos = len(t.buf)
+	return Token{Type: CommentToken, Data: string(t.buf[i:j]), Offset: start}
+}
+
+// readBogusComment(): <!foo> <?xml?> </ b> 잘못된 주석
+func (t *Tokenizer) readBogusComment(contentStart int) Token {
+	start := t.pos
+	i := contentStart
+	for i < len(t.buf) && t.buf[i] != '>' {
+		i++
+	}
+	data := string(t.buf[contentStart:i])
+	if i < len(t.buf) {
+		i++ // '>
+	}
+	t.pos = i
+	return Token{Type: CommentToken, Data: data, Offset: start}
+}
+
+// readDoctype(): DOCTYPE
+func (t *Tokenizer) readDoctype() Token {
+	start := t.pos
+	t.pos += 9 // "<!doctype"
+	t.skipSpace()
+
+	nameStart := t.pos
+	for t.pos < len(t.buf) && !isTagNameEnd(t.buf[t.pos]) {
+		t.pos++
+	}
+	name := toASCIILower(t.buf[nameStart:t.pos])
 	t.skipToTagEnd()
-	return Token{Type: CommentToken, Data: string(t.buf[start:t.pos]), Offset: start}
+
+	return Token{Type: DoctypeToken, Name: name, Data: string(t.buf[start:t.pos]), Offset: start}
+}
+
+// hasPrefixFold(: 대소문자 무시 접두사 비교
+func hasPrefixFold(b []byte, prefix string) bool {
+	if len(b) < len(prefix) {
+		return false
+	}
+	for i := 0; i < len(prefix); i++ {
+		c := b[i]
+		if 'A' <= c && c <= 'Z' {
+			c += 'a' - 'A'
+		}
+		if c != prefix[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func (t *Tokenizer) skipToTagEnd() {
