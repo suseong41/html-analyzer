@@ -130,9 +130,14 @@ func (t *Tokenizer) readRawText() Token {
 	name := t.rawTag
 	t.rawTag = ""
 
-	end := t.pos
-	for end < len(t.buf) && !t.isEndTagAt(end, name) {
-		end++
+	var end int
+	if name == "script" {
+		end = t.scriptDataEnd(t.pos)
+	} else {
+		end = t.pos
+		for end < len(t.buf) && !t.isEndTagAt(end, name) {
+			end++
+		}
 	}
 
 	if end == t.pos {
@@ -363,6 +368,42 @@ func hasPrefixFold(b []byte, prefix string) bool {
 	return true
 }
 
+// scriptDataEnd(): <script>의 내용이 실제로 끝나는지 위치 찾음.
+func (t *Tokenizer) scriptDataEnd(from int) int {
+	const (
+		data = iota
+		escaped
+		doubleEscaped
+	)
+	state := data
+
+	for i := from; i < len(t.buf); {
+		switch {
+		case t.isEndTagAt(i, "script"):
+			if state == doubleEscaped {
+				state = escaped // 닫지 않음.
+				i += len("</script")
+				continue
+			}
+			return i
+		case state == data && t.hasAt(i, "<!--"):
+			state = escaped
+			i += 4
+			continue
+		case state == escaped && t.isStartTagAt(i, "script"):
+			state = doubleEscaped
+			i += len("<script")
+			continue
+		case state != data && t.hasAt(i, "-->"):
+			state = data
+			i += 3
+			continue
+		}
+		i++
+	}
+	return len(t.buf)
+}
+
 func (t *Tokenizer) skipToTagEnd() {
 	for t.pos < len(t.buf) && t.buf[t.pos] != '>' {
 		t.pos++
@@ -439,4 +480,38 @@ func (t *Tokenizer) skipSpace() {
 	for t.pos < len(t.buf) && isHTMLSpace(t.buf[t.pos]) {
 		t.pos++
 	}
+}
+
+// hasAt(): buf[i] 부터가 s로 시작하는지 확인
+func (t *Tokenizer) hasAt(i int, s string) bool {
+	if len(t.buf) < i+len(s) {
+		return false
+	}
+	for k := 0; k < len(s); k++ {
+		if t.buf[i+k] != s[k] {
+			return false
+		}
+	}
+	return true
+}
+
+// isStartTagAt(): buf[i] 부터가 <name 인지 확인
+func (t *Tokenizer) isStartTagAt(i int, name string) bool {
+	if t.buf[i] != '<' {
+		return false
+	}
+	j := i + 1
+	if len(t.buf) <= j+len(name) {
+		return false
+	}
+	for k := 0; k < len(name); k++ {
+		c := t.buf[j+k]
+		if 'A' <= c && c <= 'Z' {
+			c += 'a' - 'A'
+		}
+		if c != name[k] {
+			return false
+		}
+	}
+	return isTagNameEnd(t.buf[j+len(name)])
 }
