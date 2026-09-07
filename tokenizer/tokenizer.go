@@ -25,6 +25,7 @@ type Token struct {
 	Attrs       []Attribute
 	Data        string
 	Offset      int
+	Raw         bool // <script>/<style>
 	SelfClosing bool
 }
 
@@ -55,6 +56,8 @@ func New(input string) *Tokenizer {
 	}
 	return &Tokenizer{buf: buf, lineStarts: starts}
 }
+
+var rcdataTags = map[string]bool{"title": true, "textarea": true}
 
 var rawTextTags = map[string]bool{
 	"script": true, "style": true, "textarea": true, "title": true,
@@ -133,7 +136,7 @@ func (t *Tokenizer) readRawText() Token {
 		return t.Next() // 내용이 비면 다음 태그 탐색
 	}
 
-	tok := Token{Type: TextToken, Data: string(t.buf[t.pos:end]), Offset: t.pos}
+	tok := Token{Type: TextToken, Data: string(t.buf[t.pos:end]), Offset: t.pos, Raw: !rcdataTags[name]}
 	t.pos = end
 	return tok
 }
