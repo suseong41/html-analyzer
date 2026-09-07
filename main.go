@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"htmlscanner/tokenizer"
+	"github.com/suseong41/suseong-html-analyzer/tokenizer"
 	"log"
 	"os"
 	"sort"
@@ -16,7 +16,7 @@ const (
 func main() {
 
 	// HTML READ
-	data, err := os.ReadFile("jnu_main.html")
+	data, err := os.ReadFile("testdata/jnu_main.html")
 	if err != nil {
 		log.Fatal(err)
 	}

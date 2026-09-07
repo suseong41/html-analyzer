@@ -14,3 +14,9 @@ Makefile
 
 # Clion
 **/.idea/*
+
+# Go
+/suseong-html-analyzer
+*.test
+*.out
+coverage.*
