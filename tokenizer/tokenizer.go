@@ -1,0 +1,325 @@
+package tokenizer
+
+import (
+	"sort"
+	"unicode/utf8"
+)
+
+type TokenType int
+
+/*
+iota 0부터 1씩 증가.
+C에 Default enumerate 느낌.
+*/
+const (
+	ErrToken      TokenType = iota // 0
+	TextToken                      // 1
+	StartTagToken                  // 2 <p>
+	EndTagToken                    // 3 </p>
+	CommentToken                   // 4 <!-- -->, <!DOCTYPE
+)
+
+type Token struct {
+	Type        TokenType
+	Name        string
+	Attrs       []Attribute
+	Data        string
+	Offset      int
+	SelfClosing bool
+}
+
+type Tokenizer struct {
+	buf        []byte // 입력 전체
+	pos        int
+	rawTag     string // "": 일반 모드, "script": 원시 모드
+	lineStarts []int  // 각 줄이 시작하는 오프셋
+}
+
+type Attribute struct {
+	Name   string
+	Value  string
+	Quote  byte // '"', '\'', 0 = 따옴표 없음
+	Offset int
+}
+
+/*
+내부 상태를 바꾸기에 *로 전달해야 함.
+*/
+func New(input string) *Tokenizer {
+	buf := []byte(input)
+	starts := []int{0}
+	for i, c := range buf {
+		if c == '\n' {
+			starts = append(starts, i+1)
+		}
+	}
+	return &Tokenizer{buf: buf, lineStarts: starts}
+}
+
+var rawTextTags = map[string]bool{
+	"script": true, "style": true, "textarea": true, "title": true,
+	"iframe": true, "noembed": true, "noframes": true, "xmp": true,
+}
+
+// Next() - Token 꺼냄.
+func (t *Tokenizer) Next() Token {
+	if len(t.buf) <= t.pos {
+		return Token{Type: ErrToken}
+	}
+
+	if t.rawTag != "" {
+		return t.readRawText()
+	}
+
+	if !t.isTagStart() {
+		return t.readText()
+	}
+
+	switch t.buf[t.pos+1] {
+	case '!', '?':
+		return t.readComment()
+	case '/':
+		return t.readTag(EndTagToken)
+	default:
+		return t.readTag(StartTagToken)
+	}
+}
+
+// readText() - '<' 찾기
+func (t *Tokenizer) readText() Token {
+	start := t.pos
+	for t.pos < len(t.buf) {
+		if t.isTagStart() {
+			break
+		}
+		t.pos++
+	}
+	return Token{Type: TextToken, Data: string(t.buf[start:t.pos]), Offset: start}
+}
+
+// readTag() - '>' 찾기
+func (t *Tokenizer) readTag(typ TokenType) Token {
+	start := t.pos
+	t.pos++ // skip '<'
+	if typ == EndTagToken {
+		t.pos++
+	}
+
+	nameStart := t.pos
+	for t.pos < len(t.buf) && !isTagNameEnd(t.buf[t.pos]) {
+		t.pos++
+	}
+	name := toASCIILower(t.buf[nameStart:t.pos])
+	attrs, selfClosing := t.readAttributes()
+	t.skipToTagEnd()
+
+	if typ == StartTagToken && rawTextTags[name] {
+		t.rawTag = name
+	}
+	return Token{Type: typ, Name: name, Attrs: attrs, Data: string(t.buf[start:t.pos]), Offset: start, SelfClosing: selfClosing}
+}
+
+// readRawRext() <script> 등의 내용을 닫는 태그 직전까지
+func (t *Tokenizer) readRawText() Token {
+	name := t.rawTag
+	t.rawTag = ""
+
+	end := t.pos
+	for end < len(t.buf) && !t.isEndTagAt(end, name) {
+		end++
+	}
+
+	if end == t.pos {
+		return t.Next() // 내용이 비면 다음 태그 탐색
+	}
+
+	tok := Token{Type: TextToken, Data: string(t.buf[t.pos:end]), Offset: t.pos}
+	t.pos = end
+	return tok
+}
+
+// Attr() 이름이 name인 첫 번째 속성 값 반환
+func (tok Token) Attr(name string) (string, bool) {
+	for _, a := range tok.Attrs {
+		if a.Name == name {
+			return a.Value, true
+		}
+	}
+	return "", false
+}
+
+func (t *Tokenizer) readAttribute() Attribute {
+	// 이름
+	nameStart := t.pos
+	for t.pos < len(t.buf) && !isAttrNameEnd(t.buf[t.pos]) {
+		t.pos++
+	}
+	a := Attribute{Name: toASCIILower(t.buf[nameStart:t.pos]), Offset: nameStart}
+
+	// '='가 없으면 값 없는 속성
+	t.skipSpace()
+	if len(t.buf) <= t.pos || t.buf[t.pos] != '=' {
+		return a
+	}
+	t.pos++
+	t.skipSpace()
+	if len(t.buf) <= t.pos {
+		return a
+	}
+
+	// 값
+	switch q := t.buf[t.pos]; q {
+	case '"', '\'':
+		t.pos++
+		valStart := t.pos
+		for t.pos < len(t.buf) && t.buf[t.pos] != q {
+			t.pos++
+		}
+		a.Quote = q
+		a.Value = string(t.buf[valStart:t.pos])
+		if t.pos < len(t.buf) {
+			t.pos++
+		}
+	default:
+		valStart := t.pos
+		for t.pos < len(t.buf) && !isUnquotedValueEnd(t.buf[t.pos]) {
+			t.pos++
+		}
+		a.Value = string(t.buf[valStart:t.pos])
+	}
+	return a
+}
+
+func (t *Tokenizer) readAttributes() ([]Attribute, bool) {
+	var attrs []Attribute
+	selfClosing := false
+	for {
+		t.skipSpace()
+		if len(t.buf) <= t.pos {
+			return attrs, selfClosing
+		}
+		c := t.buf[t.pos]
+		if c == '>' {
+			return attrs, selfClosing
+		}
+		if c == '/' {
+			t.pos++
+			selfClosing = t.pos < len(t.buf) && t.buf[t.pos] == '>'
+			continue
+		}
+		attrs = append(attrs, t.readAttribute())
+	}
+}
+
+func (tt TokenType) String() string {
+	switch tt {
+	case ErrToken:
+		return "ERR"
+	case TextToken:
+		return "TEXT"
+	case StartTagToken:
+		return "START"
+	case EndTagToken:
+		return "END"
+	case CommentToken:
+		return "COMMENT"
+	}
+	return "UNKNOWN"
+}
+
+func (t *Tokenizer) Position(offset int) (line, col int) {
+	if offset < 0 {
+		offset = 0
+	}
+	if len(t.buf) < offset {
+		offset = len(t.buf)
+	}
+	i := sort.Search(len(t.lineStarts), func(k int) bool {
+		return offset < t.lineStarts[k]
+	}) - 1
+	return i + 1, utf8.RuneCount(t.buf[t.lineStarts[i]:offset]) + 1
+}
+
+func (t *Tokenizer) readComment() Token {
+	start := t.pos
+	t.skipToTagEnd()
+	return Token{Type: CommentToken, Data: string(t.buf[start:t.pos]), Offset: start}
+}
+
+func (t *Tokenizer) skipToTagEnd() {
+	for t.pos < len(t.buf) && t.buf[t.pos] != '>' {
+		t.pos++
+	}
+	if t.pos < len(t.buf) {
+		t.pos++ // '>' 포함.
+	}
+}
+
+func (t *Tokenizer) isTagStart() bool {
+	if t.pos >= len(t.buf) || t.buf[t.pos] != '<' {
+		return false
+	}
+	if t.pos+1 >= len(t.buf) {
+		return false // '<' 로 끝남.
+	}
+	c := t.buf[t.pos+1]
+	return isASCIIAlpha(c) || c == '/' || c == '!' || c == '?'
+}
+
+func (t *Tokenizer) isEndTagAt(i int, name string) bool {
+	if t.buf[i] != '<' || len(t.buf) <= i+1 || t.buf[i+1] != '/' {
+		return false
+	}
+	j := i + 2
+	if len(t.buf) <= j+len(name) {
+		return false
+	}
+	for k := 0; k < len(name); k++ {
+		c := t.buf[j+k]
+		if 'A' <= c && c <= 'Z' {
+			c += 'a' - 'A'
+		}
+		if c != name[k] {
+			return false
+		}
+	}
+	return isTagNameEnd(t.buf[j+len(name)])
+}
+
+// ASCII
+func isASCIIAlpha(c byte) bool {
+	return ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z')
+}
+
+func toASCIILower(b []byte) string {
+	out := make([]byte, len(b))
+	for i, c := range b {
+		if 'A' <= c && c <= 'Z' {
+			c += 'a' - 'A'
+		}
+		out[i] = c
+	}
+	return string(out)
+}
+
+func isHTMLSpace(c byte) bool {
+	return c == ' ' || c == '\t' || c == '\n' || c == '\f' || c == '\r'
+}
+
+func isTagNameEnd(c byte) bool {
+	return isHTMLSpace(c) || c == '/' || c == '>'
+}
+
+func isAttrNameEnd(c byte) bool {
+	return isHTMLSpace(c) || c == '/' || c == '>' || c == '='
+}
+
+func isUnquotedValueEnd(c byte) bool {
+	return isHTMLSpace(c) || c == '>'
+}
+
+func (t *Tokenizer) skipSpace() {
+	for t.pos < len(t.buf) && isHTMLSpace(t.buf[t.pos]) {
+		t.pos++
+	}
+}
