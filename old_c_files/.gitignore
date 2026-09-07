@@ -1,0 +1,16 @@
+# 빌드
+**/Build/*
+**/Output/*
+
+# Visual Studio
+*.user
+.vs/
+
+# Cmake
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+
+# Clion
+**/.idea/*
