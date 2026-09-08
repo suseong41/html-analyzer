@@ -11,6 +11,7 @@ type Severity int
 // Context: 모든 규칙이 공유하는 읽기 전용 정보
 type Context struct {
 	URL    string
+	Scheme string
 	Domain string
 	stack  openStack
 }
@@ -44,6 +45,9 @@ func newRules() []Rule {
 		ruleFunc(ruleJavaScriptURL),
 		ruleFunc(ruleZeroWidth),
 		ruleFunc(ruleCrossOriginPasswordForm),
+		ruleFunc(ruleMixedContent),
+		ruleFunc(ruleSubresourceIntegrity),
+		&targetBlankRule{},
 	}
 }
 
@@ -82,7 +86,7 @@ func Scan(src string) Result { return ScanURL(src, "") }
 
 func ScanURL(src, pageURL string) Result {
 	z := tokenizer.New(src)
-	ctx := &Context{URL: pageURL, Domain: domainOf(pageURL)}
+	ctx := &Context{URL: pageURL, Scheme: schemeOf(pageURL), Domain: domainOf(pageURL)}
 	rules := newRules()
 
 	res := Result{
@@ -152,4 +156,12 @@ func (c *Context) OpenForm() (tokenizer.Token, bool) {
 		return tokenizer.Token{}, false
 	}
 	return *c.stack.form, true
+}
+
+// schemeOf(): URL의 scheme을 소문자로
+func schemeOf(rawURL string) string {
+	if i := strings.Index(rawURL, "://"); 0 <= i {
+		return strings.ToLower(strings.TrimSpace(rawURL[:i]))
+	}
+	return ""
 }

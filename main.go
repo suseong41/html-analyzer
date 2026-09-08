@@ -22,6 +22,10 @@ func main() {
 	fmt.Println("-------- 처리 시작 --------")
 	res := scanner.ScanURL(string(data), "https://www.jnu.ac.kr/")
 
+	sort.SliceStable(res.Findings, func(i, j int) bool {
+		return res.Findings[j].Severity < res.Findings[i].Severity
+	})
+
 	for _, f := range res.Findings {
 		fmt.Printf("  %4d:%-4d %-4s [%s] %s\n", f.Line, f.Col, f.Severity, f.Code, f.Evidence)
 	}
