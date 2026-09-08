@@ -103,7 +103,7 @@ func ruleExfilChannel(ctx *Context, tok tokenizer.Token) []Finding {
 }
 
 // eval()이 디코더와 함께일 때 의심
-var decoders = []string{" atob(", "unescape(", "fromcharcode(", "decodeuricomponent("}
+var decoders = []string{"atob(", "unescape(", "fromcharcode(", "decodeuricomponent("}
 
 func ruleObfuscateEval(ctx *Context, tok tokenizer.Token) []Finding {
 	data, ok := scriptText(ctx, tok)

@@ -21,6 +21,7 @@ func TestDomainOf(t *testing.T) {
 
 func TestFormOrigin(t *testing.T) {
 	const page = "https://bank.example.com/login"
+	const code = "cross-origin-password-form"
 	cases := []struct {
 		name string
 		html string
@@ -40,39 +41,30 @@ func TestFormOrigin(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			var n int
-			for _, f := range ScanURL(c.html, page).Findings {
-				if f.Code == "cross-origin-password-form" {
-					n++
-				}
-			}
-			if n != c.want {
-				t.Errorf("%s → %d건, want %d건", c.html, n, c.want)
+			if got := countCode(c.html, page, code); got != c.want {
+				t.Errorf("%s → %d건, want %d건", c.html, got, c.want)
 			}
 		})
 	}
 }
 
 func TestZeroWidth(t *testing.T) {
+	const code = "zero-width"
 	cases := []struct {
+		name string
 		html string
 		want int
 	}{
-		{"<p>정상 텍스트</p>", 0},
-		{"<p>보이지\u200b않음</p>", 1},
-		{"<a href=\"a\u200bb.com\">x</a>", 1},
-		{"<p>\uFEFF</p>", 1},
+		{"정상", "<p>정상 텍스트</p>", 0},
+		{"텍스트", "<p>보이지\u200b않음</p>", 1},
+		{"속성값", "<a href=\"a\u200bb.com\">x</a>", 1},
+		{"BOM", "<p>\uFEFF</p>", 1},
 	}
 	for _, c := range cases {
-		var n int
-		for _, f := range Scan(c.html).Findings {
-			if f.Code == "zero-width" {
-				n++
+		t.Run(c.name, func(t *testing.T) {
+			if got := countCode(c.html, "", code); got != c.want {
+				t.Errorf("%q → %d건, want %d건", c.html, got, c.want)
 			}
-		}
-		if n != c.want {
-			t.Errorf("%q → %d건, want %d건", c.html, n, c.want)
-		}
-
+		})
 	}
 }
