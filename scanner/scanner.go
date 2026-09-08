@@ -168,3 +168,18 @@ func schemeOf(rawURL string) string {
 	}
 	return ""
 }
+
+// ParseSeverity(): medium -> Severity로 변경
+func ParseSeverity(name string) (Severity, bool) {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "info":
+		return Info, true
+	case "low":
+		return Low, true
+	case "medium", "med":
+		return Medium, true
+	case "high":
+		return High, true
+	}
+	return Info, false
+}
