@@ -1,8 +1,8 @@
 package main
 
 import (
+	"flag"
 	"fmt"
-	"log"
 	"os"
 	"sort"
 
@@ -11,40 +11,78 @@ import (
 
 // map: [키]값{}
 
-func main() {
+func main() { os.Exit(run()) }
 
-	// HTML READ
-	data, err := os.ReadFile("testdata/jnu_main.html")
+func usage() {
+	out := flag.CommandLine.Output()
+	fmt.Fprintf(out, "사용법: %s [옵션] <htmlfile> [url]\n\n", os.Args[0])
+	flag.PrintDefaults()
+	fmt.Fprintf(out, "\n종료 코드: 0-발견 없음 1-발견 있음 2-사용법/입출력 오류")
+}
+
+func run() int {
+	flag.Usage = usage
+	minName := flag.String("min", "info", "최소 심각도 (info|low|medium|high)")
+	showStats := flag.Bool("stats", false, "토큰·태그 통계도 출력")
+	flag.Parse()
+
+	if n := flag.NArg(); n < 1 || 2 < n {
+		flag.Usage()
+		return 2
+	}
+	min, ok := scanner.ParseSeverity(*minName)
+	if !ok {
+		fmt.Fprintf(os.Stderr, "알 수 없는 심각도: %q\n", *minName)
+		return 2
+	}
+
+	path, pageURL := flag.Arg(0), flag.Arg(1)
+	data, err := os.ReadFile(path)
 	if err != nil {
-		log.Fatal(err)
+		fmt.Fprintln(os.Stderr, err)
+		return 2
 	}
 
-	fmt.Println("-------- 처리 시작 --------")
-	res := scanner.ScanURL(string(data), "https://www.jnu.ac.kr/")
+	res := scanner.ScanURL(string(data), pageURL)
 
-	sort.SliceStable(res.Findings, func(i, j int) bool {
-		return res.Findings[j].Severity < res.Findings[i].Severity
-	})
-
+	var findings []scanner.Finding
 	for _, f := range res.Findings {
-		fmt.Printf("  %4d:%-4d %-4s [%s] %s\n", f.Line, f.Col, f.Severity, f.Code, f.Evidence)
+		if min <= f.Severity {
+			findings = append(findings, f)
+		}
 	}
-	fmt.Printf("\n탐지 %d건\n", len(res.Findings))
-	fmt.Println("토큰 종류:", res.Tokens)
-	names := make([]string, 0, len(res.Tags))
-	for name := range res.Tags {
-		names = append(names, name)
-	}
-	sort.Slice(names, func(i, j int) bool {
-		return res.Tags[names[j]] < res.Tags[names[i]]
+	sort.SliceStable(findings, func(i, j int) bool {
+		return findings[j].Severity < findings[i].Severity
 	})
 
-	for i, name := range names {
-		if 15 <= i {
+	for _, f := range findings {
+		fmt.Printf("%s:%d:%d: %-6s [%s] %s\n", path, f.Line, f.Col, f.Severity, f.Code, f.Evidence)
+	}
+
+	if *showStats {
+		printStats(res)
+	}
+	fmt.Fprintf(os.Stderr, "\n%s - 발견 %d건\n", path, len(findings))
+
+	if len(findings) == 0 {
+		return 0
+	}
+	return 1
+}
+
+func printStats(res scanner.Result) {
+	out := os.Stderr
+	fmt.Fprintf(out, "\n토큰: %v\n", res.Tokens)
+	names := make([]string, 0, len(res.Tags))
+	for n := range res.Tags {
+		names = append(names, n)
+	}
+	sort.Slice(names, func(i, j int) bool { return res.Tags[names[j]] < res.Tags[names[i]] })
+	fmt.Fprintln(out, "태그별 (상위 10)")
+	for i, n := range names {
+		if 10 <= i {
 			break
 		}
-		fmt.Printf("  %-12s %d\n", name, res.Tags[name])
+		fmt.Fprintf(out, " %-12s %d\n", n, res.Tags[n])
 	}
-
-	fmt.Println("-------- 처리 완료 --------")
 }
