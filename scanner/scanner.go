@@ -48,6 +48,9 @@ func newRules() []Rule {
 		ruleFunc(ruleMixedContent),
 		ruleFunc(ruleSubresourceIntegrity),
 		&targetBlankRule{},
+		ruleFunc(ruleWebShellSignature),
+		ruleFunc(ruleExfilChannel),
+		ruleFunc(ruleObfuscateEval),
 	}
 }
 
