@@ -118,51 +118,25 @@ func ruleZeroWidth(ctx *Context, tok tokenizer.Token) []Finding {
 
 // -- 외부 도메인으로 가는 비밀번호 폼 (H103) ----
 
-type formOriginRule struct {
-	inForm      bool
-	action      string
-	hasPassword bool
-	passwordOff int
-}
-
-func (r *formOriginRule) Check(ctx *Context, tok tokenizer.Token) []Finding {
-	switch {
-	case tok.Type == tokenizer.StartTagToken && tok.Name == "form":
-		out := r.report(ctx)
-		r.inForm = true
-		r.action, _ = tok.Attr("action")
-		r.hasPassword = false
-		return out
-	case tok.Type == tokenizer.EndTagToken && tok.Name == "form":
-		out := r.report(ctx)
-		r.inForm = false
-		return out
-	case r.inForm && tok.Type == tokenizer.StartTagToken && tok.Name == "input":
-		if v, ok := tok.Attr("type"); ok && strings.EqualFold(strings.TrimSpace(v), "password") {
-			r.hasPassword = true
-			r.passwordOff = tok.Offset
-		}
-	}
-	return nil
-}
-
-func (r *formOriginRule) Finish(ctx *Context) []Finding {
-	out := r.report(ctx)
-	r.inForm = false
-	return out
-}
-
-func (r *formOriginRule) report(ctx *Context) []Finding {
-	if !r.inForm || !r.hasPassword || ctx.Domain == "" {
+func ruleCrossOriginPasswordForm(ctx *Context, tok tokenizer.Token) []Finding {
+	if tok.Type != tokenizer.StartTagToken || tok.Name != "input" {
 		return nil
 	}
-	action := normalizeURL(r.action)
-	if !strings.HasPrefix(action, "http://") &&
-		!strings.HasPrefix(action, "https://") &&
-		!strings.HasPrefix(action, "//") {
+	if v, ok := tok.Attr("type"); !ok || !strings.EqualFold(strings.TrimSpace(v), "password") {
 		return nil
 	}
-	d := domainOf(action)
+	form, ok := ctx.OpenForm()
+	if !ok || ctx.Domain == "" {
+		return nil
+	}
+	action, _ := form.Attr("action")
+	v := normalizeURL(action)
+	if !strings.HasPrefix(v, "http://") &&
+		!strings.HasPrefix(v, "https://") &&
+		!strings.HasPrefix(v, "//") {
+		return nil // 상대 경로 → 같은 출처
+	}
+	d := domainOf(v)
 	if d == "" || d == ctx.Domain {
 		return nil
 	}
@@ -170,7 +144,7 @@ func (r *formOriginRule) report(ctx *Context) []Finding {
 		Code:     "cross-origin-password-form",
 		Title:    "비밀번호 폼이 외부 도메인으로 전송됨",
 		Severity: High,
-		Offset:   r.passwordOff,
-		Evidence: ctx.Domain + " → " + d + "  (action=" + r.action + ")",
+		Offset:   tok.Offset,
+		Evidence: ctx.Domain + " → " + d + "  (action=" + action + ")",
 	}}
 }

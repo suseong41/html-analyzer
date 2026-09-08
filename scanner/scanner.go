@@ -12,6 +12,7 @@ type Severity int
 type Context struct {
 	URL    string
 	Domain string
+	stack  openStack
 }
 
 // Rule: 토큰을 하나씩 보고 발견을 돌려줌.
@@ -42,7 +43,7 @@ func newRules() []Rule {
 		ruleFunc(ruleInlineHandler),
 		ruleFunc(ruleJavaScriptURL),
 		ruleFunc(ruleZeroWidth),
-		&formOriginRule{},
+		ruleFunc(ruleCrossOriginPasswordForm),
 	}
 }
 
@@ -95,9 +96,15 @@ func ScanURL(src, pageURL string) Result {
 			break
 		}
 		res.Tokens[tok.Type]++
-		if tok.Type == tokenizer.StartTagToken {
+
+		switch tok.Type {
+		case tokenizer.StartTagToken:
 			res.Tags[tok.Name]++
+			ctx.stack.start(tok)
+		case tokenizer.EndTagToken:
+			ctx.stack.end(tok.Name)
 		}
+
 		for _, r := range rules {
 			res.Findings = append(res.Findings, r.Check(ctx, tok)...)
 		}
@@ -133,4 +140,16 @@ func domainOf(rawURL string) string {
 		s = s[:i]
 	}
 	return strings.ToLower(s)
+}
+
+// In Element, OpenForm 규칙으로만 접근. 스택 직접 건들지 않음.
+// InElement: 현재 열려 있는 조상 중 name이 있는지 확인.
+func (c *Context) InElement(name string) bool { return c.stack.has(name) }
+
+// OpenForm(): 지금 유효한 <form> 시작 태그 반환
+func (c *Context) OpenForm() (tokenizer.Token, bool) {
+	if c.stack.form == nil {
+		return tokenizer.Token{}, false
+	}
+	return *c.stack.form, true
 }
