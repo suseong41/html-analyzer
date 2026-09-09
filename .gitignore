@@ -17,6 +17,7 @@ Makefile
 
 # Go
 /suseong-html-analyzer
+/scan
 *.test
 *.out
 coverage.*

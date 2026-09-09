@@ -10,6 +10,7 @@ import (
 )
 
 // map: [키]값{}
+// Printf - 표준 출력 | Fprintf - 원하는 파일에 출력
 
 func main() { os.Exit(run()) }
 
