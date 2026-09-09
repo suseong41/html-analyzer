@@ -130,13 +130,7 @@ func ruleCrossOriginPasswordForm(ctx *Context, tok tokenizer.Token) []Finding {
 		return nil
 	}
 	action, _ := form.Attr("action")
-	v := normalizeURL(action)
-	if !strings.HasPrefix(v, "http://") &&
-		!strings.HasPrefix(v, "https://") &&
-		!strings.HasPrefix(v, "//") {
-		return nil // 상대 경로 → 같은 출처
-	}
-	d := domainOf(v)
+	d := absoluteHost(action)
 	if d == "" || d == ctx.Domain {
 		return nil
 	}

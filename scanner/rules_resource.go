@@ -65,11 +65,7 @@ func ruleSubresourceIntegrity(ctx *Context, tok tokenizer.Token) []Finding {
 	if url == "" {
 		return nil // inline
 	}
-	v := normalizeURL(url)
-	if !strings.HasPrefix(v, "http://") && !strings.HasPrefix(v, "https://") && !strings.HasPrefix(v, "//") {
-		return nil // 상대 경로 = 같은 출처
-	}
-	d := domainOf(v)
+	d := absoluteHost(url)
 	if d == "" || d == ctx.Domain {
 		return nil // 자기 도메인
 	}

@@ -54,6 +54,8 @@ func newRules() []Rule {
 		ruleFunc(ruleMetaRefreshScheme),
 		ruleFunc(ruleBaseHrefExternal),
 		ruleFunc(ruleIframeSandboxEscape),
+		ruleFunc(ruleFormActionIP),
+		ruleFunc(ruleDataURIDocument),
 	}
 }
 
@@ -130,6 +132,18 @@ func ScanURL(src, pageURL string) Result {
 		res.Findings[i].Line, res.Findings[i].Col = z.Position(res.Findings[i].Offset)
 	}
 	return res
+}
+
+// absoluteHost(): URL이 호스트를 명시할 때 반환.
+// 상대 경로("/x", "./x")이거나 호스트를 뽑을 수 없으면 "" 반환.
+func absoluteHost(rawURL string) string {
+	v := normalizeURL(rawURL)
+	if !strings.HasPrefix(v, "http://") &&
+		!strings.HasPrefix(v, "https://") &&
+		!strings.HasPrefix(v, "//") {
+		return "" // 상대 경로 → 같은 출처
+	}
+	return domainOf(v)
 }
 
 // domainOf(): URL에서 실제 접속 대상 호스트 추출.
