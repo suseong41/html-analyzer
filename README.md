@@ -1,5 +1,7 @@
 # suseong-html-analyzer
 
+![CI](https://github.com/suseong41/suseong-html-analyzer/actions/workflows/ci.yml/badge.svg)
+
 HTML을 파싱해 **XSS·피싱·리소스 위험**을 찾아내는 정적 보안 스캐너 (Go).
 외부 의존성 없이 표준 라이브러리만으로 동작한다.
 

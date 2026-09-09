@@ -6,38 +6,39 @@ on:
   pull_request:
     branches: [main]
   schedule:
-    - cron: "0 18 * * 0" # 매주 일요일 03:00 긴 퍼징
-    
+    - cron: "0 18 * * 0" # 매주 일요일 03:00 KST — 긴 퍼징
+
 jobs:
   test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      
-      - uses: actions/setup-go@v4
+
+      - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      
+
       - name: gofmt
         run: |
+          unformatted=$(gofmt -l .)
           if [ -n "$unformatted" ]; then
             echo "gofmt 안 된 파일:"
             echo "$unformatted"
             exit 1
           fi
-          
+
       - name: go vet
         run: go vet ./...
-        
+
       - name: go test
         run: go test ./...
-      
+
       - name: build
         run: go build .
-        
+
       - name: 스모크 - 정상 페이지에 HIGH 발견 없음
         run: ./suseong-html-analyzer -min high testdata/jnu_main.html https://www.jnu.ac.kr/
-        
+
       - name: 스모크 - 악성 샘플에서 HIGH 발견됨
         run: |
           if ./suseong-html-analyzer -min high testdata/malicious_sample.html https://bank.example.com/; then
@@ -45,37 +46,36 @@ jobs:
             exit 1
           fi
           echo "정상: 발견되어 종료 코드 1"
-      
-    fuzz:
-      runs-on: ubuntu-latest
-      strategy:
-        fail-fast: false
-        matrix:
-          include:
-            - pkg: ./tokenizer
-              target: FuzzTokenizer
-            - pkg: ./tokenizer
-              target: FuzzUnescape
-            - pkg: ./scanner
-              target: FuzzScan
-              
-      steps:
-        - uses: actions/checkout@v4
-        
-        - uses: actions/setup-go@v5
-          with:
-            go-version-file: go.mod
-        
-        - name: 퍼징 ${{ matrix.target }}
-          run: |
+
+  fuzz:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - pkg: ./tokenizer
+            target: FuzzTokenizer
+          - pkg: ./tokenizer
+            target: FuzzUnescape
+          - pkg: ./scanner
+            target: FuzzScan
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: 퍼징 ${{ matrix.target }}
+        run: |
           time=30s
           if [ "${{ github.event_name }}" = "schedule" ]; then time=10m; fi
-          go test ${{ matrix.pkg }} -run '^$' -fuzz ${{ matrix.target }} -fuzztime $time 
-          
-        - name: 크래시 입력 업로드
-          if: failure()
-          uses: actions/upload-artifact@v4
-          with:
+          go test ${{ matrix.pkg }} -run '^$' -fuzz ${{ matrix.target }} -fuzztime $time
+
+      - name: 크래시 입력 업로드
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
           name: fuzz-crash-${{ matrix.target }}
           path: "**/testdata/fuzz/**"
           if-no-files-found: ignore
