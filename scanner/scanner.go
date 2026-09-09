@@ -51,6 +51,9 @@ func newRules() []Rule {
 		ruleFunc(ruleWebShellSignature),
 		ruleFunc(ruleExfilChannel),
 		ruleFunc(ruleObfuscateEval),
+		ruleFunc(ruleMetaRefreshScheme),
+		ruleFunc(ruleBaseHrefExternal),
+		ruleFunc(ruleIframeSandboxEscape),
 	}
 }
 
